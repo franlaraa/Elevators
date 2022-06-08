@@ -1,64 +1,71 @@
-const { series, parallel, watch, src, dest} = require('gulp');
-
-const htmlmin = require('gulp-htmlmin');
-const del = require('del');
-const uglify = require('gulp-uglify');
-//const cssmin = require('gulp-cssmin');
-const rename = require('gulp-rename');
+const gulp = require('gulp');
+const browserify = require('browserify');
+const source = require('vinyl-source-stream');
+const buffer = require('vinyl-buffer');
+const sourcemaps = require('gulp-sourcemaps');
+const concat = require('gulp-concat');
 const minifyCSS = require('gulp-minify-css');
 const autoprefixer = require('gulp-autoprefixer');
-const purgecss = require('gulp-purgecss');
-const ts = require('gulp-typescript');
-const gulp = require("gulp");
-const tsProject = ts.createProject('tsconfig.json');
+const useref = require('gulp-useref');
+const rename = require('gulp-rename');
+const { server, reload } = require('gulp-connect');
 
-gulp.task("default", function () {
-    return tsProject.src().pipe(tsProject()).js.pipe(gulp.dest("dist"));
+gulp.task('watch', function() {
+    gulp.watch('src/**/*.ts', gulp.series('browserify'));
+    gulp.watch('src/**/*.html', gulp.series('html'));
+    gulp.watch('src/**/*.css', gulp.series('css'));
 });
 
-function minifyHtml() {
-    return src('src/index.html')
-        .pipe(htmlmin({ collapseWhitespace: true, allowEmpty: true }))
-        .pipe(dest('build'));
-}
+gulp.task('html', function() {
+    return gulp
+        .src('src/*.html')
+        .pipe(useref())
+        .pipe(gulp.dest('dist'))
+        .pipe(reload());
+});
 
-function clean(cb) {
-    del('./build/');
-    cb();
-}
-
-function step() {
-    return series(clean, minifyHtml, uglifyJS, cssMin, autoPrefix, cssPurge);
-}
-
-function uglifyJS() {
-    return src('src/**/.js')
-        .pipe(uglify())
-        .pipe(dest('build'));
-}
-
-function cssMin(){
-    return src('src//*.css')
+gulp.task('css', function() {
+    return gulp
+        .src('src/**/*.css')
         .pipe(minifyCSS())
-        //.pipe(rename({suffix: '.min'}))
-        .pipe(dest('build'));
-}
+        .pipe(autoprefixer('last 2 version', 'safari 5', 'ie 8', 'ie 9'))
+        .pipe(concat('style.min.css'))
+        .pipe(gulp.dest('dist/css'))
+        .pipe(reload());
+});
 
-function autoPrefix(){
-    return src('src//.css')
-        .pipe(autoprefixer({
-            cascade: false
-        }))
-        .pipe(dest('build'));
-}
+gulp.task('images', function() {
+    gulp.src('src/**/*.jpg').pipe(gulp.dest('dist'));
+    return gulp.src('src/**/*.png').pipe(gulp.dest('dist'));
+});
 
-function cssPurge(){
-    return src('src/**/.css')
-        .pipe(purgecss({
-            content: ['src/*/.html']
-        }))
-        .pipe(dest('build'));
-}
+gulp.task('serve', () => {
+    server({
+        name: 'Elevators',
+        root: './dist',
+        port: 5000,
+        livereload: true,
+    });
+});
 
+gulp.task('browserify', function() {
+    return browserify({
+        entries: './src/main.ts',
+    })
+        .plugin('tsify')
+        .bundle()
+        .on('error', function(err) {
+            console.log(err.message);
+        })
+        .pipe(source('bundle.js'))
+        .pipe(buffer())
+        .pipe(sourcemaps.init({ loadMaps: true }))
+        .pipe(sourcemaps.write('./'))
+        .pipe(gulp.dest('dist'))
+        .pipe(reload());
+});
 
-exports.step = series(clean, minifyHtml, uglifyJS, cssMin, autoPrefix, cssPurge);
+gulp.task(
+    'default',
+    gulp.series(['browserify', 'html', 'css', 'images', gulp.parallel('serve', 'watch')]),
+);
